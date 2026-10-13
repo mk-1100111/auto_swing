@@ -17,7 +17,9 @@ Windows 전용 Swing UIA 컨트롤 조사기입니다. `pywinauto` + Tkinter를 
 - 새로고침(F5): 현재 열린 `Swing` 창의 화면 컨트롤을 백그라운드에서 읽기
 - 검색: Auto ID, 텍스트, 값, 컨트롤 종류, 좌표로 필터
 - 컨트롤 선택: Auto ID, Name, Value, Window Text, 좌표 등 상세 확인
+- 좌표(LTRB) 열 더블클릭: 선택 컨트롤 영역의 **중앙 좌표**로 마우스 포인터 이동 (클릭하지 않음)
 - 선택 항목의 ID, 텍스트, 값, 좌표 및 Python 찾기/클릭/입력 코드 복사
+- 좌표로 이동 버튼과 마우스 우클릭 메뉴에서도 좌표 이동 지원. TXT 로그처럼 좌표가 없는 항목은 이동하지 않음
 - TXT 로그 불러오기 / CSV 내보내기
 - 메모장: `%LOCALAPPDATA%\Swing_UIA_Inspector\notes.txt`에 자동 저장 (업데이트와 무관)
 
@@ -43,7 +45,7 @@ py -3 updater.py
 - `update_manifest.json` : 원격 파일 SHA256 / 바이트 수
 - `SwingInspector-Portable.zip` : 최초 다운로드용 포터블 배포판
 
-본 앱은 Swing 화면의 UIA를 **읽기** 전용으로 탐색합니다. 복사한 Python 코드 중 `click_input()`/`set_edit_text()`는 실행자가 직접 사용한 경우에만 Swing 화면에 영향을 줍니다.
+본 앱은 Swing 화면의 UIA를 조회하며, 사용자가 좌표 열을 더블클릭할 때만 마우스 커서를 이동합니다. **실제 클릭은 하지 않습니다.** 화면 레이아웃이 바뀌었다면 새로고침(F5)으로 좌표를 갱신하세요. 복사한 Python 코드 중 `click_input()`/`set_edit_text()`는 실행자가 직접 사용한 경우에만 Swing 화면에 영향을 줍니다.
 
 ## 보안 및 제한
 

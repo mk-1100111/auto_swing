@@ -15,7 +15,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 APP_TITLE = "Swing UIA Inspector"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 DEFAULT_WINDOW_RE = r"^Swing$"
 MAX_DOCUMENT_CHARS = 500
 MAX_FIELD_CHARS = 6000
@@ -240,6 +240,30 @@ def locator_code(rec: ControlRecord, title_re: str = DEFAULT_WINDOW_RE,
     return prefix + "\n" + selector + suffix
 
 
+def rectangle_center(rect: str) -> tuple[int, int] | None:
+    """Convert a captured UIA LTRB rectangle into its on-screen center."""
+    try:
+        values = [int(part.strip()) for part in rect.split(",")]
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if len(values) != 4:
+        return None
+    left, top, right, bottom = values
+    if left >= right or top >= bottom:
+        return None
+    # Negative coordinates are supported for monitors left/above the primary one.
+    return ((left + right) // 2, (top + bottom) // 2)
+
+
+def move_cursor(x: int, y: int) -> None:
+    """Move the Windows mouse pointer, without a click or keyboard input."""
+    if sys.platform != "win32":
+        raise RuntimeError("마우스 좌표 이동 기능은 Windows에서만 사용할 수 있습니다.")
+    import ctypes
+    if not ctypes.windll.user32.SetCursorPos(x, y):
+        raise ctypes.WinError()
+
+
 class Inspector(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -359,7 +383,7 @@ class Inspector(tk.Tk):
             "kind": ("유형", 113, "w", False),
             "id": ("Auto ID", 260, "w", True),
             "text": ("텍스트 / 값", 365, "w", True),
-            "rect": ("좌표 (LTRB)", 185, "w", False),
+            "rect": ("좌표 (LTRB) · 더블클릭 이동", 215, "w", False),
         }
         for field, (label, width, anchor, stretch) in defs.items():
             self.tree.heading(field, text=label)
@@ -374,11 +398,12 @@ class Inspector(tk.Tk):
         tree_frame.rowconfigure(0, weight=1)
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self._selection_changed())
         self.tree.bind("<Control-c>", self._copy_tree_id)
-        self.tree.bind("<Double-1>", lambda _event: self.copy_field("auto_id"))
+        self.tree.bind("<Double-1>", self._tree_double_click)
         self.menu = tk.Menu(self, tearoff=0)
         self.menu.add_command(label="Auto ID 복사", command=lambda: self.copy_field("auto_id"))
         self.menu.add_command(label="텍스트 복사", command=lambda: self.copy_field("text"))
         self.menu.add_command(label="값 복사", command=lambda: self.copy_field("value"))
+        self.menu.add_command(label="좌표로 마우스 이동", command=self.move_to_selected_coordinates)
         self.menu.add_separator()
         self.menu.add_command(label="요소 찾기 코드 복사", command=lambda: self.copy_code("find"))
         self.menu.add_command(label="메모에 추가", command=self.append_to_notes)
@@ -410,6 +435,8 @@ class Inspector(tk.Tk):
             ("좌표 복사", lambda: self.copy_field("rect")),
         ):
             ttk.Button(actions, text=label, command=cb).pack(side="left", padx=(0, 5))
+        ttk.Button(actions, text="좌표로 이동", command=self.move_to_selected_coordinates).pack(
+            side="left", padx=(0, 5))
         code_actions = ttk.Frame(detail_frame, style="Panel.TFrame")
         code_actions.pack(fill="x", pady=(5, 0))
         for label, action in (("찾기 코드 복사", "find"), ("클릭 코드 복사", "click"),
@@ -439,7 +466,7 @@ class Inspector(tk.Tk):
         foot = ttk.Frame(outer, style="App.TFrame")
         foot.pack(fill="x", pady=(7, 0))
         ttk.Label(foot, textvariable=self.status_var, style="Sub.TLabel").pack(side="left", fill="x", expand=True)
-        ttk.Label(foot, text="F5 새로고침   ·   Ctrl+F 검색   ·   더블클릭 ID 복사",
+        ttk.Label(foot, text="F5 새로고침   ·   좌표 열 더블클릭 → 커서 이동 (클릭 없음)",
                   style="Sub.TLabel").pack(side="right")
 
     def _focus_search(self, _event=None):
@@ -618,6 +645,38 @@ class Inspector(tk.Tk):
             return
         code = locator_code(item, self.window_regex.get().strip() or DEFAULT_WINDOW_RE, action)
         self._clipboard(code, "Python 자동화 코드")
+
+    def move_to_selected_coordinates(self) -> None:
+        """Move pointer to center of selected control; never activate/click it."""
+        item = self._selected()
+        if item is None:
+            self.status_var.set("먼저 컨트롤을 선택하세요.")
+            return
+        center = rectangle_center(item.rect)
+        if center is None:
+            self.status_var.set("유효한 좌표가 없습니다. TXT 로그에는 좌표가 없으므로 Swing을 새로고침하세요.")
+            return
+        try:
+            move_cursor(*center)
+        except Exception as exc:
+            self.status_var.set(f"마우스 이동 실패: {exc}")
+            return
+        self.status_var.set(f"{item.control_type} #{item.number} 중심 좌표 {center}로 마우스 이동 완료 (클릭 없음)")
+
+    def _tree_double_click(self, event):
+        """Double-clicking the coordinate column moves cursor; others copy ID."""
+        row = self.tree.identify_row(event.y)
+        if not row or row not in self.displayed:
+            return "break"
+        if self.tree.identify_region(event.x, event.y) != "cell":
+            return "break"
+        self.tree.selection_set(row)
+        self.tree.focus(row)
+        if self.tree.identify_column(event.x) == "#5":
+            self.move_to_selected_coordinates()
+        else:
+            self.copy_field("auto_id")
+        return "break"
 
     def _copy_tree_id(self, _event=None):
         self.copy_field("auto_id")
