@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+*.exe
+*.zip
+*.part
+*.csv
+notes.txt
+.venv/
+.idea/

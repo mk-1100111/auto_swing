@@ -1,0 +1,69 @@
+name: Build Windows portable app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Unit tests
+        run: python -m unittest discover -p 'test_*.py' -v
+      - name: Build Windows executables
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name SwingInspector swing_inspector.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name SwingLauncher updater.py
+      - name: Prepare manifest and portable ZIP
+        shell: pwsh
+        env:
+          BUILD_VERSION: ${{ github.run_number }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          $exe = 'dist/SwingInspector.exe'
+          $info = Get-Item $exe
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = @{
+            schema = 1
+            version = "build-$env:BUILD_VERSION"
+            commit = "$env:BUILD_SHA"
+            app_asset = 'SwingInspector.exe'
+            sha256 = $sha
+            bytes = [long]$info.Length
+          }
+          $manifest | ConvertTo-Json -Depth 4 | Set-Content -Path 'dist/update_manifest.json' -Encoding utf8
+          Compress-Archive -Path 'dist/SwingLauncher.exe','dist/SwingInspector.exe' -DestinationPath 'dist/SwingInspector-Portable.zip' -Force
+      - name: Publish new latest Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_VERSION: ${{ github.run_number }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          gh release create "build-$env:BUILD_VERSION" `
+            dist/SwingInspector.exe `
+            dist/SwingLauncher.exe `
+            dist/update_manifest.json `
+            dist/SwingInspector-Portable.zip `
+            --title "Swing UIA Inspector build-$env:BUILD_VERSION" `
+            --notes "Automatic Windows build from $env:BUILD_SHA. Run SwingLauncher.exe for startup updates." `
+            --latest
